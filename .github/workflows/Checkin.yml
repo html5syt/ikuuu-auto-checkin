@@ -11,6 +11,9 @@ jobs:
   checkin:
     name: Checkin
     runs-on: ubuntu-latest
+    # 授予写入仓库内容的权限，以便推送日志
+    permissions:
+      contents: write
     env:
       ACCOUNTS: ${{ secrets.ACCOUNTS }}
       HOST: ${{ secrets.HOST }}
@@ -19,6 +22,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        # persist-credentials 默认为 true，保留 git 凭证用于后续推送
 
       - name: Use Node.js latest
         uses: actions/setup-node@v6
@@ -30,6 +34,21 @@ jobs:
         shell: bash
         run: |
           node main.js
+
+      # ---------- 新增：写入日志防休眠 ----------
+      - name: Update log to prevent repo sleep
+        if: always()   # 无论签到成败都执行，确保持续活跃
+        run: |
+          mkdir -p logs
+          echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') - Checkin run (result: ${{ steps.checkin.outcome }})" >> logs/checkin.log
+          # 保留最近 50 行，防止日志膨胀
+          tail -n 50 logs/checkin.log > logs/checkin.log.tmp && mv logs/checkin.log.tmp logs/checkin.log
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add logs/checkin.log
+          git diff --staged --quiet || git commit -m "chore: update checkin log [skip ci]"
+          git push
+      # ------------------------------------------
 
       - name: Notify
         if: ${{ always() && env.TELEGRAM_TOKEN && env.TELEGRAM_TO }}
